@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Build / package output
+build/
+dist/
+*.egg-info/
+*.zip
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# OS noise
+Thumbs.db
+desktop.ini
+
+# Audit scratchpads / personal notes
+*.scratch.md
+scratch/
+notes/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Environment files
+.env
+.env.local

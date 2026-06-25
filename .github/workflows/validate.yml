@@ -1,0 +1,73 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-skill:
+    name: Validate skill bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run skill validator
+        run: python scripts/validate_skill.py .
+
+      - name: Build portable ZIP
+        run: |
+          mkdir -p release
+          python scripts/package_skill.py . --output release/center-audit.zip
+          echo "## ZIP SHA256" >> $GITHUB_STEP_SUMMARY
+          sha256sum release/center-audit.zip >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: center-audit-zip
+          path: release/center-audit.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  validate-output-schema:
+    name: Validate JSON output schema (sanity)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate JSON files parse
+        run: |
+          python - <<'PY'
+          import json, sys, pathlib
+          root = pathlib.Path('.')
+          errors = []
+          for p in sorted(root.rglob('*.json')):
+              try:
+                  json.loads(p.read_text(encoding='utf-8'))
+              except Exception as exc:
+                  errors.append(f"{p}: {exc}")
+          if errors:
+              print("INVALID JSON:")
+              for e in errors:
+                  print(" -", e)
+              sys.exit(1)
+          print("All JSON files parse cleanly.")
+          PY
