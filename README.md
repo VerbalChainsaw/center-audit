@@ -267,6 +267,7 @@ a minimal schema-valid example.
 center-audit/
 ├── SKILL.md                              # primary instructions (<500 lines)
 ├── CHANGELOG.md                          # v2.0.1 → v2.0.0 → v1 history
+├── ROADMAP.md                            # forward-looking release plan
 ├── LICENSE                               # MIT
 ├── README.md                             # this file
 ├── .gitignore
@@ -378,6 +379,8 @@ This means:
    update an example in `examples/`.
 4. Run `python scripts/validate_skill.py .` locally before pushing.
 5. CI will run the validator and build the portable ZIP on every PR.
+6. Forward-looking plans live in [ROADMAP.md](ROADMAP.md). Items move through
+   versions; the file is updated when scope changes, not on a calendar.
 
 ---
 
