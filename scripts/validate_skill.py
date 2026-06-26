@@ -11,7 +11,20 @@ from pathlib import Path
 from typing import Any
 
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-RESOURCE_RE = re.compile(r"(?<![A-Za-z0-9_.-])((?:references|scripts|assets|evals)/[A-Za-z0-9_./-]+\.(?:md|py|json|yaml|yml|sh|js|ts))")
+# Match references to in-bundle resources by path with any extension — no
+# extension whitelist. Any file referenced via `references/`, `scripts/`,
+# `assets/`, or `evals/` relative path is checked for existence on disk.
+# This is intentional: the validator should catch missing .toml, .proto,
+# .sql, .prisma, .env.example, .txt, or any other file a reference doc
+# happens to point at. Extension filtering silently passed through missing
+# files in v2.0.x — see CHANGELOG v2.5.0 "Validator: extension-whitelist
+# regex replaced with path-only match".
+# The trailing extension requirement (`\.[A-Za-z0-9]+`) prevents
+# over-matching into adjacent prose words. Example: the phrase
+# "definition/references/call hierarchy" must NOT be parsed as the resource
+# "references/call" — `call` is not followed by `.ext`, so the match fails.
+# This is the structural replacement for the v2.0.x extension whitelist.
+RESOURCE_RE = re.compile(r"(?<![A-Za-z0-9_.-])((?:references|scripts|assets|evals)/[A-Za-z0-9_./-]*\.[A-Za-z0-9]+)")
 
 
 def _parse_scalar(raw: str) -> str:

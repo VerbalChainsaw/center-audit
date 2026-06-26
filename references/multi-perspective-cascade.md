@@ -25,9 +25,15 @@ Lens prompts must be self-contained: each subagent gets the audit frame, the len
 
 ## Dispatch mechanics
 
-Use `delegate_task` for parallel dispatch. One task per lens.
+Use the host's subagent dispatch API for parallel lens runs. One task per lens.
 
-**Critical pitfall — flat strings only.** The `goal` and `context` fields must be flat strings. Nested placeholder syntax (e.g. `<$text>foo</$text>` inside `text`) fails with `"'dict' object has no attribute 'strip'"`. Write the entire prompt as one flat string per task; don't try to template variables.
+**Host-API awareness (generalized in v2.5.0).** Different hosts expose different prompt-passing surfaces. Some accept structured goal/context fields with templated placeholders; others (e.g., hermes `delegate_task`, some opencode variants) require flat strings and reject nested structured payloads with errors like `'dict' object has no attribute 'strip'`. Before dispatching N lenses in parallel:
+
+1. Check the host's dispatch API surface (structured vs flat string goal/context fields).
+2. When in doubt, write each prompt as one flat string and pass variables by interpolation in your dispatch layer rather than inside the prompt body.
+3. Test one lens end-to-end on the actual host before fanning out. A 20-minute cascade that hits a payload-shape error on lens 4 wastes the prior three.
+
+The hermes `<$text>foo</$text>` flat-string requirement is one instance of a broader pattern; other hosts have analogous quirks. Do not assume one host's payload shape is portable.
 
 **Timeout handling.** Other subagents may return in 5-7 minutes; one may run 20+ minutes or until the runner's 600s cap. Synthesize with what arrived. The lead auditor is responsible for noting which lenses returned, which didn't, and the adjacent coverage from the returned lenses for any missing lens.
 

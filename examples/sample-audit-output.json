@@ -1,5 +1,5 @@
 {
-  "schema_version": "2.0.1",
+  "schema_version": "2.5.0",
   "result": "DEFECT_CONFIRMED",
   "case_file": {
     "mode": "INTERACTIVE",
@@ -213,6 +213,13 @@
     "independence": "Distinct evidence channel from code-static (E1) and test-runtime (E2); runtime trace was captured from staging replay, not from the failing test or the static read.",
     "result": "Trace span confirms no ledger call is emitted during applyRefund; corroborates E1 and E2.",
     "evidence_ids": ["E3"]
+  },
+  "repair_revalidation": {
+    "revalidated": true,
+    "method": "Re-ran the audit's E1 (focused read of applyRefund) and E2 (refund-balance.test.ts) against HEAD after the repair agent's fix commit. Confirmed the missing ledger.recordEntry call was added and the failing-before test now passes. Cross-checked E3 (trace replay) against the post-fix span to confirm ledger.recordEntry is now emitted.",
+    "evidence_ids": ["E1", "E2", "E3"],
+    "result": "INVARIANT_HOLDS",
+    "drift_notes": ""
   },
   "non_scope": [
     "applyCredit (separate invariant surface; flag for follow-up audit)",

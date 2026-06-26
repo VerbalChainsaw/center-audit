@@ -3,7 +3,7 @@ name: center-audit
 description: "Use this skill to investigate a specific suspected code defect, regression, or unsafe behavior change before editing. Triggers on requests to root-cause, validate, or challenge a known bug with bounded blast radius. Also triggers when the user asks to audit a layered surface from several perspectives, in completion, or to cover a GUI/Desktop / IPC / plugin stack with more than one lens. Performs a read-only, evidence-gated center-out audit through only proven causal edges and returns confirmed or disproven claims with trajectory, confidence, blast radius, smallest safe repair contract, and verification plan. Do not use for general code review, broad refactors, feature design, cosmetic edits, or implementing an already-proven fix."
 compatibility: "Agent Skills-compatible coding agents with repository read access. Git, exact search, LSP/AST, test, trace, schema, and subagent tools are optional accelerators. The audit itself is read-only."
 metadata:
-  version: "2.0.1"
+  version: "2.5.0"
   methodology: "goalpost-delta-fusion"
 ---
 
@@ -29,7 +29,7 @@ Load only what the case requires:
 - Read `references/multi-perspective-audit.md` when the audit is multi-lens (more than 2 independent channels needed for high-confidence findings). **Added 2026-06-24**: covers the verify-then-append subagent-timeout recovery pattern and the demonstrating-failing-before technique.
 - Use `references/compact-mode.md` instead of this file when context is severely constrained.
 - Read the **Multi-perspective cascade** section below and `references/multi-perspective-cascade.md` when the user asks to "run from several perspectives, in completion" or to cover a layered surface (renderer + IPC + plugin) with more than one lens.
-- Use `references/compact-mode.md` instead of this file when context is severely constrained.
+- Use `references/compact-mode.md` **instead of** this file when context is severely constrained. Loading both wastes tokens: `compact-mode.md` is the compact stand-in for `SKILL.md`, not an addition.
 
 Do not load every reference up front.
 
@@ -136,38 +136,30 @@ DEFECT CLAIM C0:
   Expected invariant: [what should remain true]
   Suspected violation: [specific, falsifiable claim]
   Center anchor: [kind + stable anchor]
-  Falsifier: [evidence that would disprove C0]
+  Falsifier: [evidence that would disprove C0]      # optional when result is NO_DEFECT_CONFIRMED
   Confidence: HIGH | MEDIUM | LOW
   Alt candidates: [other plausible anchors]
 ```
 
 Do not use “something is wrong in this area” as a claim.
 
+**Falsifier is required for `DEFECT_CONFIRMED` and `INCONCLUSIVE` audits** (the claim must be falsifiable), and **optional for `NO_DEFECT_CONFIRMED` audits** — the disproof ledger captures what was tested. The JSON schema reflects this: `case_file.falsifier` is no longer required. If you omit it, the disproof ledger entries should make the negative finding explicit (scope, evidence of absence, evidence IDs).
+
 ### 5. Pre-flight budget
 
-Use three coherent **evidence operations** as the norm and five as the hard cap. One operation is one investigative intent: exact search, focused read, LSP resolution, trace lookup, or Git comparison. Batching unrelated searches into one command still counts as multiple operations.
+The pre-flight budget scales with the complexity class of the surface. One operation is one investigative intent: exact search, focused read, LSP resolution, trace lookup, or Git comparison. Batching unrelated searches into one command still counts as multiple operations.
 
-Allowed examples:
+| Complexity class | Norm | Hard cap | Profile |
+|---|---|---|---|
+| **Single defect, well-localized** | 3 ops | 5 ops | One file, one symbol, one invariant. The user named the file/symbol/test. |
+| **Layered surface, multi-hop** | 5 ops | 8 ops | GUI + IPC bridge + plugin + HTTP server; multiple causal hops required to reach the contract edge. |
+| **Distributed or AI orchestration** | 6 ops | 10 ops | Async/queued/cross-process state, or AI agent loops with prompt/model/parser/tool/state handoffs. Frontier is nonterminal without trace correlation. |
 
-- exact search for one reported token
-- focused read to confirm the candidate anchor
-- one definition/reference/call-hierarchy resolution
-- one baseline/status command
-- one source-map or generated-source mapping
+Pick the class by surface shape, not by user urgency. A small `INTERACTIVE` audit on a layered surface can use the layered budget; a fast CI gate on a well-localized regression should use the single-defect budget even if the codebase is large.
 
-Not allowed in pre-flight:
+Allowed: exact search, focused read, definition/reference/call-hierarchy resolution, baseline/status command, source-map or generated-source mapping. Not allowed: broad pattern hunts, reading neighboring files for context, repository-wide architecture tours, history archaeology beyond what is needed to establish the baseline.
 
-- broad pattern hunts
-- reading neighboring files for context
-- repository-wide architecture tours
-- history archaeology beyond what is needed to establish the baseline
-
-If no concrete center form exists after five operations:
-
-- INTERACTIVE: ask for the smallest missing artifact.
-- AUTONOMOUS or CI: return `INCONCLUSIVE` and name the exact evidence needed.
-
-Do not invent a center.
+If no concrete center form exists after exhausting the class's hard cap: `INTERACTIVE` asks for the smallest missing artifact; `AUTONOMOUS` or `CI` returns `INCONCLUSIVE` and names the exact evidence needed. Do not invent a center.
 
 ### 6. Candidate selection and pivots
 
@@ -414,6 +406,15 @@ The audit produces a repair contract; the repair phase is a separate operation.
 - The audit's evidence IDs are leads, not citations. Re-prove the trajectory from current source before applying the fix.
 - Failing-before tests must be authored or confirmed against the audit's invariant, not against the proposed fix's diff.
 
+**Capturing re-validation in the output (v2.5+).** The repair agent records its re-validation outcome in the top-level `repair_revalidation` field of the output JSON. The field carries four values:
+
+- `INVARIANT_HOLDS` — required_invariant still reproduces against current source. Proceed.
+- `INVARIANT_DRIFTED` — anchor or contract drifted; repair proceeded with adjustments in `drift_notes`.
+- `INVARIANT_REPLACED` — original invariant was wrong; repair replaced it and recorded the correction.
+- `CONTRACT_REJECTED` — re-validation failed; repair halted; the audit reopens.
+
+This closes the operational enforcement gap on repair phase independence: re-validation is no longer a host-wiring hope, it is a contract field in the audit/repair handoff.
+
 ## After the audit: how to pick which defect to fix first
 
 A multi-defect audit (a single audit, a cascade, or a prior codebase-audit-hardening pass) usually returns more confirmed defects than one session can responsibly repair. The default behavior — fix them all, fast — is the wrong default for two reasons: (1) each fix needs its own failing-before test and verification cycle, which compounds linearly; (2) the act of fixing changes the code under audit, and chasing defects in parallel risks regressions that mask the original findings.
@@ -476,7 +477,7 @@ How to run a cascade:
 
 1. **Choose 4-6 lenses.** Each lens covers a different surface, reads different artifacts, and tests a different invariant. Lens prompts must specify the "Does NOT look at" list to enforce orthogonality.
 2. **Use the CENTER-AUDIT output format as the schema for every subagent.** This forces consistent structure: 24 sections, E# evidence ledger, trajectory, disproven concerns, repair contract. A subagent that finds nothing returns NO_DEFECT_CONFIRMED with evidence of absence, not weak findings.
-3. **Dispatch in parallel via `delegate_task`.** Use flat strings in the goal parameter — nested `<$text>` placeholders fail with `"'dict' object has no attribute 'strip'"`.
+3. **Dispatch in parallel via the host's subagent API.** Some hosts accept templated goal/context fields with structured placeholders; others (e.g., hermes, some opencode variants) require flat strings and reject nested structured payloads with errors like `'dict' object has no attribute 'strip'`. Check the host's API before writing lens prompts. When in doubt, write each prompt as one flat string and pass variables by interpolation in your dispatch layer rather than inside the prompt body.
 4. **The lead auditor synthesizes.** Read every full report. Build a defect crosswalk (defect → which lenses → evidence IDs). Cluster convergent findings. Prioritize for repair. Write the combined report.
 5. **Subagent outputs are untrusted.** Spot-check 2-3 numerical claims per subagent (counts, line numbers, spec citations). A subagent that said "35+ inline color uses" may actually mean 369. The lead's combined report cites the verified count, not the subagent's.
 6. **Subagent truncation is real.** A complete CENTER report is 400-1200 lines; a truncated one is 150-250 lines and stops mid-section. If a subagent returns only CASE FILE + CLAIM + FUSION, verify the central claim at the cited line numbers and append the missing sections (evidence ledger, disproven concerns, repair contract) yourself.

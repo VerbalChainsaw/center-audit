@@ -1,5 +1,64 @@
 # CENTER-AUDIT Changelog
 
+## 2.5.0
+
+Operability hardening. Methodology preserved; the audit/repair separation, evidence-gated expansion, calibrated fusion, and clean-audit principle are unchanged. This release closes operational gaps surfaced during real-world use and makes the doctrine more honest about its own contract.
+
+### Output schema: `repair_revalidation` field (additive, optional)
+
+The JSON output schema adds a top-level `repair_revalidation` object captured by the repair agent after applying the fix:
+
+```json
+"repair_revalidation": {
+  "revalidated": true,
+  "method": "Re-ran E1, E2, E3 against HEAD post-fix...",
+  "evidence_ids": ["E1", "E2", "E3"],
+  "result": "INVARIANT_HOLDS" | "INVARIANT_DRIFTED" | "INVARIANT_REPLACED" | "CONTRACT_REJECTED",
+  "drift_notes": ""
+}
+```
+
+This closes the operational enforcement gap on repair phase independence: re-validation is no longer a host-wiring hope, it is a contract field in the audit/repair handoff. Field is optional so v2.0.x audits remain valid; v2.5+ repair agents are expected to fill it.
+
+### Output schema: `falsifier` is now optional
+
+`case_file.falsifier` is no longer required by the schema. Required for `DEFECT_CONFIRMED` and `INCONCLUSIVE` audits (the claim must be falsifiable). Optional for `NO_DEFECT_CONFIRMED` audits — the disproof ledger already captures what was tested. Existing v2.0.x outputs with falsifier remain valid; new clean audits may omit it.
+
+### Output schema: `contradiction.evidence_ids` minimum lowered from 2 to 1
+
+Allows K1-style single-evidence self-corrections in the contradiction ledger (e.g., "E7 was originally cited as spec §E-1 but the actual webhook spec lives at §3.1"). The original `minItems: 2` forced these honest self-corrections into awkward 2-ID entries that didn't reflect the actual contradiction.
+
+### Validator: extension-whitelist regex replaced with path-only match
+
+`scripts/validate_skill.py` `RESOURCE_RE` no longer restricts matching to `.md|.py|.json|.yaml|.yml|.sh|.js|.ts`. Any file referenced via `references/`, `scripts/`, `assets/`, or `evals/` path is now checked for existence on disk. This fixes a silent validation gap: a missing `.toml`, `.proto`, `.sql`, `.prisma`, `.env.example`, `.txt`, or other non-whitelisted file referenced in a `.md` would previously pass validation. Now it fails loudly.
+
+### Doctrine: tiered pre-flight budget by complexity class
+
+The flat "3 ops norm, 5 ops hard cap" pre-flight budget is replaced with a three-tier budget selected by surface shape:
+
+| Complexity class | Norm | Hard cap | Profile |
+|---|---|---|---|
+| Single defect, well-localized | 3 | 5 | One file, one symbol, one invariant |
+| Layered surface, multi-hop | 5 | 8 | GUI + IPC bridge + plugin + HTTP server |
+| Distributed or AI orchestration | 6 | 10 | Async/queued/cross-process state, or AI agent loops |
+
+The cap was too tight for layered surfaces where 1 boundary + 1 upstream + 1 downstream + 1 verification = 4 ops is the minimum before investigation. The new budget is selected by surface shape, not by user urgency.
+
+### Doctrine: `compact-mode.md` mutual exclusion
+
+`SKILL.md` progressive disclosure now explicitly states that `references/compact-mode.md` is loaded **instead of** `SKILL.md`, not in addition to. Loading both wastes tokens; `compact-mode.md` is the compact stand-in, not a supplement.
+
+### Generalization: multi-perspective dispatch notes
+
+`references/multi-perspective-cascade.md` replaces the hermes-specific `<$text>foo</$text>` flat-string pitfall with host-agnostic guidance ("some hosts accept structured goal/context fields; others require flat strings; check the host's API before writing lens prompts"). The hermes requirement is one instance of a broader pattern.
+
+### Compatibility
+
+- v2.0.x JSON outputs without `repair_revalidation` remain valid.
+- v2.0.x JSON outputs with `falsifier` remain valid (no migration needed).
+- v2.0.x JSON outputs with single-evidence contradictions remain valid (they were already accepted by the validator; the schema is now also permissive).
+- The validator change is stricter: bundles that previously passed because a missing `.toml`/`.proto`/etc. was whitelisted will now fail. This is intentional — it surfaces real bugs in bundle construction.
+
 ## 2.0.1
 
 Maintenance release. No methodology changes — only packaging and integration polish.
