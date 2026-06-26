@@ -43,28 +43,26 @@ jobs:
 
       - name: Smoke test validator (catches missing non-md references)
         run: |
-          set -euo pipefail
-          python - <<'PY'
+          cat > /tmp/smoke_validator.py << 'SMOKE_EOF'
           """Smoke test: confirm the validator catches a missing .toml reference.
 
           Builds a tmpdir with a SKILL.md that references references/missing.toml,
           runs the validator, and asserts the validator fails with the expected
           error. This proves the v2.5 path-only resource regex actually works
-          and isn't being silently over-permissive.
+          and is not being silently over-permissive.
           """
           import os, sys, tempfile, subprocess, pathlib, textwrap
 
           with tempfile.TemporaryDirectory() as tmp:
               tmp = pathlib.Path(tmp)
-              (tmp / "SKILL.md").write_text(textwrap.dedent("""\
+              (tmp / "SKILL.md").write_text(textwrap.dedent('''\
               ---
               name: smoke-test-skill
               description: "Smoke test fixture for validator regression coverage. Do not use."
               ---
               See references/missing.toml for the missing config.
-              """), encoding="utf-8")
+              '''), encoding="utf-8")
               (tmp / "references").mkdir()
-              # Note: NO missing.toml is created — this is the bug we want to catch
 
               script = pathlib.Path("scripts/validate_skill.py").resolve()
               proc = subprocess.run(
@@ -77,11 +75,12 @@ jobs:
                   print("stderr:", proc.stderr)
                   sys.exit(1)
               if "missing.toml" not in proc.stdout:
-                  print("SMOKE TEST FAILED: validator rejected but didn't name the missing file")
+                  print("SMOKE TEST FAILED: validator rejected but did not name the missing file")
                   print("stdout:", proc.stdout)
                   sys.exit(1)
               print("OK: validator correctly rejected missing .toml reference")
-              PY
+          SMOKE_EOF
+          python /tmp/smoke_validator.py
 
   validate-output-schema:
     name: Validate JSON output schema (sanity)
@@ -95,9 +94,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install jsonschema
+        run: pip install jsonschema
+
       - name: Validate JSON files parse
         run: |
-          python - <<'PY'
+          python - << 'JSON_EOF'
           import json, sys, pathlib
           root = pathlib.Path('.')
           errors = []
@@ -112,26 +114,21 @@ jobs:
                   print(" -", e)
               sys.exit(1)
           print("All JSON files parse cleanly.")
-          PY
+          JSON_EOF
 
       - name: Validate example JSON against schema (backward-compat)
         run: |
-          python - <<'PY'
-          """Verify four backward-compat shapes against the v2.5.1 schema.
+          cat > /tmp/backward_compat.py << 'BC_EOF'
+          """Verify five backward-compat shapes against the v2.5.1 schema.
 
-          1. DEFECT_CONFIRMED with falsifier and without repair_revalidation (v2.0.x shape)
-          2. NO_DEFECT_CONFIRMED without falsifier but with disproof (v2.5.0+ allowed shape)
-          3. NO_DEFECT_CONFIRMED with neither falsifier nor disproof (must REJECT — nothing-burger)
-          4. Full v2.5.1 output with repair_revalidation INVARIANT_HOLDS
-          5. INVARIANT_DRIFTED without drift_notes (must REJECT — schema enforces)
+          1. DEFECT_CONFIRMED with falsifier and without repair_revalidation (v2.0.x shape) — accept
+          2. NO_DEFECT_CONFIRMED without falsifier but with disproof (v2.5.0+ allowed) — accept
+          3. NO_DEFECT_CONFIRMED with neither falsifier nor disproof (nothing-burger) — REJECT
+          4. Full v2.5.1 output with repair_revalidation INVARIANT_HOLDS — accept
+          5. INVARIANT_DRIFTED without drift_notes — REJECT (schema enforces)
           """
           import json, sys, copy
           import jsonschema
-          try:
-              import jsonschema
-          except ImportError:
-              print("jsonschema not installed; skipping backward-compat test")
-              sys.exit(0)
 
           schema = json.load(open('assets/center-audit-output.schema.json', encoding='utf-8'))
           example = json.load(open('examples/sample-audit-output.json', encoding='utf-8'))
@@ -189,7 +186,6 @@ jobs:
               'revalidated': True,
               'method': 'Re-ran trajectory against current source',
               'result': 'INVARIANT_DRIFTED',
-              # drift_notes deliberately omitted
           }
           try:
               validator.validate(shape5)
@@ -200,4 +196,5 @@ jobs:
 
           print()
           print("All backward-compat checks passed.")
-          PY
+          BC_EOF
+          python /tmp/backward_compat.py
