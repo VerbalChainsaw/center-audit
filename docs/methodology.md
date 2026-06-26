@@ -224,3 +224,63 @@ change `CHANGELOG.md`, bump `metadata.version`, and update
 
 For worked end-to-end runs, see
 [`references/worked-example-autogoal-bridge-webhook.md`](../references/worked-example-autogoal-bridge-webhook.md).
+
+---
+
+## What v2.5 changed — and what it deliberately did not
+
+v2.5.0 / v2.5.1 are operability-hardening releases. The doctrine preserved
+verbatim from v2.0.1: courtroom discipline, goalpost ladder, delta recording,
+evidence-gated expansion, calibrated fusion, clean-audit principle, strict
+audit/repair separation. None of these moved.
+
+What v2.5 added:
+
+- **`repair_revalidation` field** in the output schema. Closes the operational
+  enforcement gap on repair phase independence. Previously the rule was:
+  "the repair agent must re-validate the invariant before editing." Whether
+  this actually happened depended on the host. v2.5 makes it a contract field
+  in the audit/repair handoff with four calibrated result values.
+- **Tiered pre-flight budget.** The flat 3/5 cap was too tight for layered
+  surfaces (1 boundary + 1 upstream + 1 downstream + 1 verification = 4 ops
+  is the minimum before investigation). The new budget scales by complexity
+  class.
+- **Validator: path-only resource match.** Caught a silent validation gap
+  where any reference doc pointing at a missing `.toml`, `.proto`, `.sql`,
+  `.prisma`, `.env.example`, or `.txt` file would pass validation because
+  the v2.0.x regex only matched whitelisted extensions.
+- **Schema relaxations** (`falsifier` optional for clean audits;
+  `contradiction.evidence_ids` minItems lowered to 1; `kind` field added to
+  contradictions to distinguish `CONTRADICTION` from `SELF_CORRECTION`).
+- **`NO_DEFECT_CONFIRMED` audit guard.** With `falsifier` now optional, the
+  schema enforces that a clean audit must have either a `falsifier` or at
+  least one disproof entry — silent nothing-burgers are no longer valid.
+- **Multi-perspective dispatch notes generalized** from hermes-specific to
+  host-agnostic, with the hermes instance preserved as a concrete example.
+- **`compact-mode.md` mutual exclusion** note in both `SKILL.md` and
+  `compact-mode.md` itself.
+
+What v2.5 deliberately did NOT change:
+
+- The 0–10 goalpost ladder.
+- The evidence channels and A–D strength grades.
+- The repair contract structure (objective, invariant, allowed/forbidden
+  scope, compatibility, reversibility).
+- The clean-audit-is-correct output rule.
+- The "no refactor during CENTER" rule.
+- The pre-flight operation semantics (one op = one investigative intent).
+
+If you find yourself wanting to relax any of these in a future release,
+that's a different kind of change — it should ship as v3.0, not v2.x.
+
+### Why this release, not v3.0
+
+v2.5 adds fields and conditionally relaxes requirements. It does not
+remove any existing requirement in a way that breaks v2.0.x producers or
+consumers. A v2.0.x JSON output remains valid against the v2.5 schema (the
+backward-compat tests in CI prove this for four shapes: `DEFECT_CONFIRMED`
+with falsifier, `NO_DEFECT_CONFIRMED` without falsifier, full v2.5 with
+`repair_revalidation`, and single-evidence `SELF_CORRECTION`). v3.0 would
+mean a methodology change — a different ceiling on the ladder, a different
+calibration axis, or a different repair-handoff shape. None of those are
+proposed here.

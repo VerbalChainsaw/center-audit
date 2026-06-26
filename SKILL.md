@@ -3,7 +3,7 @@ name: center-audit
 description: "Use this skill to investigate a specific suspected code defect, regression, or unsafe behavior change before editing. Triggers on requests to root-cause, validate, or challenge a known bug with bounded blast radius. Also triggers when the user asks to audit a layered surface from several perspectives, in completion, or to cover a GUI/Desktop / IPC / plugin stack with more than one lens. Performs a read-only, evidence-gated center-out audit through only proven causal edges and returns confirmed or disproven claims with trajectory, confidence, blast radius, smallest safe repair contract, and verification plan. Do not use for general code review, broad refactors, feature design, cosmetic edits, or implementing an already-proven fix."
 compatibility: "Agent Skills-compatible coding agents with repository read access. Git, exact search, LSP/AST, test, trace, schema, and subagent tools are optional accelerators. The audit itself is read-only."
 metadata:
-  version: "2.5.0"
+  version: "2.5.1"
   methodology: "goalpost-delta-fusion"
 ---
 
@@ -143,7 +143,7 @@ DEFECT CLAIM C0:
 
 Do not use “something is wrong in this area” as a claim.
 
-**Falsifier is required for `DEFECT_CONFIRMED` and `INCONCLUSIVE` audits** (the claim must be falsifiable), and **optional for `NO_DEFECT_CONFIRMED` audits** — the disproof ledger captures what was tested. The JSON schema reflects this: `case_file.falsifier` is no longer required. If you omit it, the disproof ledger entries should make the negative finding explicit (scope, evidence of absence, evidence IDs).
+**Falsifier is required for `DEFECT_CONFIRMED` and `INCONCLUSIVE`** (the claim must be falsifiable), and **optional for `NO_DEFECT_CONFIRMED`** — the disproof ledger captures what was tested. The JSON schema reflects this: `case_file.falsifier` is no longer required. If you omit it, the disproof ledger must make the negative finding explicit. The schema additionally enforces that a `NO_DEFECT_CONFIRMED` audit has either a `falsifier` or at least one disproof entry — silent nothing-burgers are no longer schema-valid.
 
 ### 5. Pre-flight budget
 
@@ -155,7 +155,13 @@ The pre-flight budget scales with the complexity class of the surface. One opera
 | **Layered surface, multi-hop** | 5 ops | 8 ops | GUI + IPC bridge + plugin + HTTP server; multiple causal hops required to reach the contract edge. |
 | **Distributed or AI orchestration** | 6 ops | 10 ops | Async/queued/cross-process state, or AI agent loops with prompt/model/parser/tool/state handoffs. Frontier is nonterminal without trace correlation. |
 
-Pick the class by surface shape, not by user urgency. A small `INTERACTIVE` audit on a layered surface can use the layered budget; a fast CI gate on a well-localized regression should use the single-defect budget even if the codebase is large.
+**Decision rule for picking a class.** Use the highest tier whose criteria apply:
+
+1. **Distributed / AI orchestration (6/10)** if **any** of: the surface spans processes or machines; the failure involves async/queued/cross-process state; the defect lives in AI agent orchestration (prompt → model → tool → parser → state → next-decision); trace correlation is needed to make the trajectory nonterminal.
+2. **Layered surface (5/8)** if **any** of: the surface has 2+ architectural layers (e.g., renderer + IPC + plugin + server); DI / registry indirection is required to reach the contract; multiple causal hops are needed even synchronously.
+3. **Single defect (3/5)** otherwise: one file, one symbol, one invariant, the user named the anchor.
+
+Pick by surface shape, not user urgency. When in doubt, escalate one tier — running out of pre-flight budget on a serious case is worse than over-budgeting on a small one.
 
 Allowed: exact search, focused read, definition/reference/call-hierarchy resolution, baseline/status command, source-map or generated-source mapping. Not allowed: broad pattern hunts, reading neighboring files for context, repository-wide architecture tours, history archaeology beyond what is needed to establish the baseline.
 
@@ -414,6 +420,15 @@ The audit produces a repair contract; the repair phase is a separate operation.
 - `CONTRACT_REJECTED` — re-validation failed; repair halted; the audit reopens.
 
 This closes the operational enforcement gap on repair phase independence: re-validation is no longer a host-wiring hope, it is a contract field in the audit/repair handoff.
+
+**When to use which result value.** This is the part the schema cannot decide for you:
+
+- `INVARIANT_HOLDS` is the default. The audit's evidence chain reproduces against current source without modification. Cite the E# IDs you re-verified.
+- `INVARIANT_DRIFTED` is for when the audit was substantially correct but reality moved (sibling function renamed, fixture seed changed, dependency version shifted the contract shape). The invariant still holds in spirit but the exact anchor no longer reproduces. Adjust the path to the contract, record in `drift_notes`, and proceed. C0 confidence is not invalidated; the *binding* to current source was loosened.
+- `INVARIANT_REPLACED` is for when the audit's understanding of the invariant was wrong. The repair agent independently discovered the contract the audit described is not the actual contract the system enforces. Record the corrected invariant in `drift_notes` and proceed. Flag back to the audit's owner so the audit is revised, not just repaired.
+- `CONTRACT_REJECTED` is for when re-validation surfaced a material contradiction: the evidence chain does not reproduce, the trajectory cannot be reconstructed, the failing-before test no longer fails (suggesting the defect was fixed by an unrelated change), or the contract scope no longer matches the code. The repair agent halts; the audit must be reopened, not patched around.
+
+A common error is using `INVARIANT_DRIFTED` as a catch-all for "I had to make adjustments." If the adjustment was purely mechanical (renamed a variable, fixed a test typo, updated an import path), that is `INVARIANT_HOLDS` with a `drift_notes` note about the mechanical adjustment. Reserve `DRIFTED` for cases where the contract edge itself shifted.
 
 ## After the audit: how to pick which defect to fix first
 

@@ -4,7 +4,7 @@
 
 [![Validate skill bundle](https://github.com/VerbalChainsaw/center-audit/actions/workflows/validate.yml/badge.svg)](.github/workflows/validate.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version: 2.0.1](https://img.shields.io/badge/version-2.0.1-success.svg)](CHANGELOG.md)
+[![Version: 2.5.1](https://img.shields.io/badge/version-2.5.1-success.svg)](CHANGELOG.md)
 
 `center-audit` is an [Agent Skills](https://agentskills.io)-compatible skill that
 turns a coding agent into a forensic root-cause auditor. It performs a
@@ -39,6 +39,46 @@ failing-before/passing-after tests.
 
 A clean audit (`NO_DEFECT_CONFIRMED`) is correct output when the evidence is
 clean.
+
+---
+
+## What's new in v2.5
+
+### `repair_revalidation` field (v2.5.0)
+
+The output schema adds an optional top-level field captured by the **repair agent** (not the audit agent) after applying the fix. It records whether the audit's `required_invariant` was independently re-validated against current source before editing, the method, and one of four results:
+
+- `INVARIANT_HOLDS` — required_invariant still reproduces. Proceed with the contract.
+- `INVARIANT_DRIFTED` — anchor or contract drifted; repair proceeded with adjustments in `drift_notes`.
+- `INVARIANT_REPLACED` — original invariant was wrong; repair replaced it.
+- `CONTRACT_REJECTED` — re-validation failed; repair halted; audit reopens.
+
+This closes the operational enforcement gap on repair phase independence: re-validation is no longer a host-wiring hope, it is a contract field in the audit/repair handoff.
+
+### Tiered pre-flight budget (v2.5.0)
+
+The flat 3/5 pre-flight budget is now tiered by complexity class:
+
+| Complexity class | Norm | Hard cap |
+|---|---|---|
+| Single defect, well-localized | 3 ops | 5 ops |
+| Layered surface, multi-hop | 5 ops | 8 ops |
+| Distributed or AI orchestration | 6 ops | 10 ops |
+
+Pick by surface shape (layer count, async/distributed boundaries, AI orchestration involvement), not by user urgency.
+
+### Validator: extension-whitelist replaced with path-only match (v2.5.0)
+
+`scripts/validate_skill.py` now catches missing `.toml`, `.proto`, `.sql`, `.prisma`, `.env.example`, `.txt`, or any other file referenced via `references/`, `scripts/`, `assets/`, or `evals/` path. v2.0.x silently passed through these; v2.5 fails loudly. v2.5.1 also fixes a URL false-positive (URLs containing `/references/foo.md` no longer falsely match).
+
+### Schema relaxations (v2.5.0, backward compatible)
+
+- `case_file.falsifier` is optional — required for `DEFECT_CONFIRMED` and `INCONCLUSIVE`; optional for `NO_DEFECT_CONFIRMED` (the disproof ledger captures it). A `NO_DEFECT_CONFIRMED` audit must now have either a `falsifier` or at least one disproof entry — silent nothing-burgers are no longer schema-valid.
+- `contradiction.evidence_ids` `minItems` lowered from 2 to 1, allowing K1-style single-evidence self-corrections. New optional `kind` field on contradictions: `CONTRADICTION | SELF_CORRECTION` (default `CONTRADICTION`).
+
+### Multi-perspective cascade dispatch (v2.5.0)
+
+`references/multi-perspective-cascade.md` dispatch mechanics were generalized from a hermes-specific pitfall to host-agnostic guidance. The hermes `<$text>` flat-string requirement is preserved as a concrete instance of the broader pattern.
 
 ---
 

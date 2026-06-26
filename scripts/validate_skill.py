@@ -19,12 +19,20 @@ NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 # happens to point at. Extension filtering silently passed through missing
 # files in v2.0.x — see CHANGELOG v2.5.0 "Validator: extension-whitelist
 # regex replaced with path-only match".
+#
+# The negative lookbehind `(?<![A-Za-z0-9_./-])` excludes any path-shaped
+# character (including `/`) so the regex does not match inside URLs. A URL
+# like `https://example.com/references/foo.md` was a v2.5.0 false-positive
+# (the lookbehind excluded `.` and `-` but not `/`); v2.5.1 excludes `/`
+# too. Trade-off: nested paths like `subdir/references/foo.md` are no longer
+# validated. In an Agent Skills bundle, nested skill-root paths would violate
+# the bundle structure anyway, so this trade-off is acceptable.
+#
 # The trailing extension requirement (`\.[A-Za-z0-9]+`) prevents
 # over-matching into adjacent prose words. Example: the phrase
 # "definition/references/call hierarchy" must NOT be parsed as the resource
 # "references/call" — `call` is not followed by `.ext`, so the match fails.
-# This is the structural replacement for the v2.0.x extension whitelist.
-RESOURCE_RE = re.compile(r"(?<![A-Za-z0-9_.-])((?:references|scripts|assets|evals)/[A-Za-z0-9_./-]*\.[A-Za-z0-9]+)")
+RESOURCE_RE = re.compile(r"(?<![A-Za-z0-9_./-])((?:references|scripts|assets|evals)/[A-Za-z0-9_./-]*\.[A-Za-z0-9]+)")
 
 
 def _parse_scalar(raw: str) -> str:

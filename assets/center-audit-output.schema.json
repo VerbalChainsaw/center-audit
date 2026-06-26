@@ -27,7 +27,7 @@
     "stop_reason"
   ],
   "properties": {
-    "schema_version": { "const": "2.5.0" },
+    "schema_version": { "const": "2.5.1" },
     "result": {
       "enum": ["DEFECT_CONFIRMED", "NO_DEFECT_CONFIRMED", "INCONCLUSIVE"]
     },
@@ -314,6 +314,55 @@
     },
     "stop_reason": { "type": "string", "minLength": 1 }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "repair_revalidation": {
+            "type": "object",
+            "required": ["result"],
+            "properties": {
+              "result": { "not": { "const": "INVARIANT_HOLDS" } }
+            }
+          }
+        },
+        "required": ["repair_revalidation"]
+      },
+      "then": {
+        "properties": {
+          "repair_revalidation": {
+            "required": ["drift_notes"],
+            "properties": {
+              "drift_notes": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result": { "const": "NO_DEFECT_CONFIRMED" }
+        },
+        "required": ["result"]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "case_file": { "required": ["falsifier"] }
+            }
+          },
+          {
+            "required": ["disproven_concerns"],
+            "properties": {
+              "disproven_concerns": { "minItems": 1 }
+            }
+          }
+        ]
+      }
+    }
+  ],
   "$defs": {
     "evidence_id": {
       "type": "string",
@@ -397,6 +446,11 @@
       "required": ["id", "evidence_ids", "description", "status", "resolution", "confidence_effect"],
       "properties": {
         "id": { "type": "string", "pattern": "^K[1-9][0-9]*$" },
+        "kind": {
+          "enum": ["CONTRADICTION", "SELF_CORRECTION"],
+          "default": "CONTRADICTION",
+          "description": "CONTRADICTION: conflicting evidence between two or more anchor-stable observations (E2 contradicts E5). SELF_CORRECTION: the auditor caught its own evidence-anchor error and re-anchored (originally cited E7 as spec §E-1; actual is §3.1). v2.0.x outputs without `kind` are treated as CONTRADICTION by convention. minItems on evidence_ids was lowered from 2 to 1 in v2.5 to permit SELF_CORRECTION entries that cite a single re-anchored evidence row."
+        },
         "evidence_ids": {
           "type": "array",
           "minItems": 1,

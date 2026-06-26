@@ -1,63 +1,87 @@
 # CENTER-AUDIT Changelog
 
+## 2.5.1
+
+Operability hardening follow-up. Closes gaps in the v2.5.0 release surfaced by post-publish review.
+
+### Schema: `contradiction.kind` field
+
+Adds an optional `kind` field to contradiction entries: `CONTRADICTION` (default, for v2.0.x back-compat) or `SELF_CORRECTION`. Single-evidence entries (K1-style) are now semantically distinct from real contradictions between two or more anchor-stable observations.
+
+### Schema: `repair_revalidation.drift_notes` is now enforced
+
+The v2.5.0 schema description claimed `drift_notes` was "required when `result != INVARIANT_HOLDS`" but the schema did not enforce it. v2.5.1 uses `allOf` / `if` / `then` to actually require `drift_notes` (non-empty) when `result` is `INVARIANT_DRIFTED`, `INVARIANT_REPLACED`, or `CONTRACT_REJECTED`. Empty `drift_notes` on a non-HOLDS result is now a schema violation.
+
+### Schema: `NO_DEFECT_CONFIRMED` silent nothing-burger guard
+
+With `falsifier` now optional in v2.5.0, an audit could be `NO_DEFECT_CONFIRMED` with empty `disproven_concerns`, no `falsifier`, and no contradictions — a clean bill of health from someone who didn't actually look. v2.5.1 uses `allOf` / `if` / `then` to require either a `case_file.falsifier` or at least one entry in `disproven_concerns` when `result == NO_DEFECT_CONFIRMED`.
+
+### Validator: URL false-positive fix
+
+v2.5.0's `RESOURCE_RE` negative lookbehind excluded `[A-Za-z0-9_.-]` but not `/`, so URLs like `https://example.com/references/foo.md` falsely matched as a resource reference. The current bundle did not trigger this (no URLs contain `references/`), but the bug was latent. v2.5.1 excludes `/` too. Trade-off: nested paths like `subdir/references/foo.md` are no longer validated; in an Agent Skills bundle this is acceptable (nested skill-root paths would violate the bundle structure).
+
+### Doctrine: tiered budget decision criteria
+
+v2.5.0 introduced the tiered pre-flight budget but did not specify when to pick which class. v2.5.1 adds a decision rule: use the highest tier whose criteria apply, escalating one tier when in doubt.
+
+### Doctrine: `repair_revalidation` result-value guidance
+
+v2.5.0 introduced four result values but did not say when to use which. v2.5.1 adds guidance: `INVARIANT_HOLDS` is the default; `DRIFTED` is reserved for cases where the contract edge itself shifted (not for mechanical adjustments); `REPLACED` is for the audit having been wrong; `REJECTED` is for a failed handoff.
+
+### Documentation
+
+- `README.md` version badge updated to 2.5.1; new "What's new in v2.5" section documents `repair_revalidation`, tiered budget, validator fix, and schema relaxations.
+- `docs/methodology.md` gains a v2.5 section explaining what changed and what deliberately did not.
+- `references/compact-mode.md` gains the mutual-exclusion note that v2.5.0 added only to `SKILL.md`.
+- `references/multi-perspective-cascade.md` restores the hermes concrete example as an instance of the host-agnostic pattern (v2.5.0 generalized it away).
+- `examples/repair-revalidation-drifted.json` adds a worked example showing `INVARIANT_DRIFTED` with non-trivial `drift_notes`.
+
+### CI
+
+- Bumped `actions/checkout` v4 → v5, `actions/setup-python` v5 → v6, `actions/upload-artifact` v4 → v5. Silences Node 20 deprecation warnings.
+- New smoke-test step: validates that the validator catches a deliberately missing `.toml` reference in a fixture bundle.
+- New backward-compat step: validates five shapes against the v2.5.1 schema (v2.0.x with falsifier, NO_DEFECT_CONFIRMED with disproof, NO_DEFECT_CONFIRMED with nothing — must reject, full v2.5.1 with `INVARIANT_HOLDS`, `INVARIANT_DRIFTED` without `drift_notes` — must reject).
+
+### Compatibility
+
+- v2.0.x and v2.5.0 JSON outputs remain valid against the v2.5.1 schema.
+- New constraints (`drift_notes` required when applicable; `NO_DEFECT_CONFIRMED` guard) tighten the schema; outputs that passed v2.5.0 by being incomplete will now fail v2.5.1. This is intentional.
+
 ## 2.5.0
 
 Operability hardening. Methodology preserved; the audit/repair separation, evidence-gated expansion, calibrated fusion, and clean-audit principle are unchanged. This release closes operational gaps surfaced during real-world use and makes the doctrine more honest about its own contract.
 
 ### Output schema: `repair_revalidation` field (additive, optional)
 
-The JSON output schema adds a top-level `repair_revalidation` object captured by the repair agent after applying the fix:
-
-```json
-"repair_revalidation": {
-  "revalidated": true,
-  "method": "Re-ran E1, E2, E3 against HEAD post-fix...",
-  "evidence_ids": ["E1", "E2", "E3"],
-  "result": "INVARIANT_HOLDS" | "INVARIANT_DRIFTED" | "INVARIANT_REPLACED" | "CONTRACT_REJECTED",
-  "drift_notes": ""
-}
-```
-
-This closes the operational enforcement gap on repair phase independence: re-validation is no longer a host-wiring hope, it is a contract field in the audit/repair handoff. Field is optional so v2.0.x audits remain valid; v2.5+ repair agents are expected to fill it.
+Adds a top-level `repair_revalidation` object captured by the repair agent after applying the fix. Four result values: `INVARIANT_HOLDS`, `INVARIANT_DRIFTED`, `INVARIANT_REPLACED`, `CONTRACT_REJECTED`. Closes the operational enforcement gap on repair phase independence.
 
 ### Output schema: `falsifier` is now optional
 
-`case_file.falsifier` is no longer required by the schema. Required for `DEFECT_CONFIRMED` and `INCONCLUSIVE` audits (the claim must be falsifiable). Optional for `NO_DEFECT_CONFIRMED` audits — the disproof ledger already captures what was tested. Existing v2.0.x outputs with falsifier remain valid; new clean audits may omit it.
+`case_file.falsifier` is no longer required. Required for `DEFECT_CONFIRMED` and `INCONCLUSIVE`; optional for `NO_DEFECT_CONFIRMED` (disproof ledger captures what was tested).
 
 ### Output schema: `contradiction.evidence_ids` minimum lowered from 2 to 1
 
-Allows K1-style single-evidence self-corrections in the contradiction ledger (e.g., "E7 was originally cited as spec §E-1 but the actual webhook spec lives at §3.1"). The original `minItems: 2` forced these honest self-corrections into awkward 2-ID entries that didn't reflect the actual contradiction.
+Allows K1-style single-evidence self-corrections. **Behavior change to note:** single-evidence contradictions that previously *failed* validation in v2.0.x now *pass* in v2.5.0+. This is intentional — see the v2.5.1 entry for the semantic distinction (`kind: CONTRADICTION` vs `kind: SELF_CORRECTION`).
 
-### Validator: extension-whitelist regex replaced with path-only match
+### Validator: extension-whitelist replaced with path-only match
 
-`scripts/validate_skill.py` `RESOURCE_RE` no longer restricts matching to `.md|.py|.json|.yaml|.yml|.sh|.js|.ts`. Any file referenced via `references/`, `scripts/`, `assets/`, or `evals/` path is now checked for existence on disk. This fixes a silent validation gap: a missing `.toml`, `.proto`, `.sql`, `.prisma`, `.env.example`, `.txt`, or other non-whitelisted file referenced in a `.md` would previously pass validation. Now it fails loudly.
+`RESOURCE_RE` no longer restricts matching to `.md|.py|.json|.yaml|.yml|.sh|.js|.ts`. Any file referenced via `references/`, `scripts/`, `assets/`, or `evals/` path is checked for existence on disk. Catches missing `.toml`, `.proto`, `.sql`, `.prisma`, `.env.example`, `.txt`. **Stricter than v2.0.x** — bundles that previously passed by accident will now fail.
 
 ### Doctrine: tiered pre-flight budget by complexity class
 
-The flat "3 ops norm, 5 ops hard cap" pre-flight budget is replaced with a three-tier budget selected by surface shape:
-
-| Complexity class | Norm | Hard cap | Profile |
-|---|---|---|---|
-| Single defect, well-localized | 3 | 5 | One file, one symbol, one invariant |
-| Layered surface, multi-hop | 5 | 8 | GUI + IPC bridge + plugin + HTTP server |
-| Distributed or AI orchestration | 6 | 10 | Async/queued/cross-process state, or AI agent loops |
-
-The cap was too tight for layered surfaces where 1 boundary + 1 upstream + 1 downstream + 1 verification = 4 ops is the minimum before investigation. The new budget is selected by surface shape, not by user urgency.
+The flat 3/5 cap is replaced with: single defect 3/5, layered surface 5/8, distributed/AI 6/10. Selected by surface shape, not user urgency.
 
 ### Doctrine: `compact-mode.md` mutual exclusion
 
-`SKILL.md` progressive disclosure now explicitly states that `references/compact-mode.md` is loaded **instead of** `SKILL.md`, not in addition to. Loading both wastes tokens; `compact-mode.md` is the compact stand-in, not a supplement.
+`references/compact-mode.md` is loaded **instead of** `SKILL.md`, not in addition to.
 
 ### Generalization: multi-perspective dispatch notes
 
-`references/multi-perspective-cascade.md` replaces the hermes-specific `<$text>foo</$text>` flat-string pitfall with host-agnostic guidance ("some hosts accept structured goal/context fields; others require flat strings; check the host's API before writing lens prompts"). The hermes requirement is one instance of a broader pattern.
+Hermes-specific `<$text>` pitfall generalized to host-agnostic guidance. The hermes instance is preserved in v2.5.1 as a concrete example.
 
 ### Compatibility
 
-- v2.0.x JSON outputs without `repair_revalidation` remain valid.
-- v2.0.x JSON outputs with `falsifier` remain valid (no migration needed).
-- v2.0.x JSON outputs with single-evidence contradictions remain valid (they were already accepted by the validator; the schema is now also permissive).
-- The validator change is stricter: bundles that previously passed because a missing `.toml`/`.proto`/etc. was whitelisted will now fail. This is intentional — it surfaces real bugs in bundle construction.
+v2.0.x JSON outputs (with or without `falsifier`, with or without `repair_revalidation`, with 2+ evidence contradictions) remain valid against the v2.5.0 schema. The validator change is the only breaking strictness change.
 
 ## 2.0.1
 
@@ -91,7 +115,7 @@ This release preserves the original courtroom doctrine, goalpost ladder, delta r
 - Separates the failure observation point from the causal center.
 - Supports LINE, SYMBOL, EDGE, STATE, EVENT, GENERATED, and PAIRED centers.
 - Treats a user-supplied code reference as high-value evidence that must be verified, not automatic proof.
-- Replaces “topmost application frame is the center” with the first frame or edge where the contract can actually be violated.
+- Replaces "topmost application frame is the center" with the first frame or edge where the contract can actually be violated.
 - Adds a falsifiable defect claim before expansion.
 - Limits center pivots to prevent search thrash.
 
@@ -152,7 +176,7 @@ Conditional guidance now covers:
 - Adds oracle independence, fixture validity, isolation, and side-effect checks.
 - Supports property, characterization, differential, trace replay, static, screenshot, log, and manual verification when direct reproduction is infeasible.
 - Adds nondeterministic sample/envelope requirements for AI and race-like behavior.
-- Upgrades “smallest sufficient safe change” into a repair contract with allowed scope, forbidden scope, compatibility invariants, and reversibility.
+- Upgrades "smallest sufficient safe change" into a repair contract with allowed scope, forbidden scope, compatibility invariants, and reversibility.
 - Adds a machine-readable JSON Schema for orchestrators and downstream repair agents.
 
 ### Packaging and maintainability

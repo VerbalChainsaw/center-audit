@@ -16,10 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -34,22 +34,64 @@ jobs:
           sha256sum release/center-audit.zip >> $GITHUB_STEP_SUMMARY
 
       - name: Upload ZIP artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: center-audit-zip
           path: release/center-audit.zip
           if-no-files-found: error
           retention-days: 30
 
+      - name: Smoke test validator (catches missing non-md references)
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          """Smoke test: confirm the validator catches a missing .toml reference.
+
+          Builds a tmpdir with a SKILL.md that references references/missing.toml,
+          runs the validator, and asserts the validator fails with the expected
+          error. This proves the v2.5 path-only resource regex actually works
+          and isn't being silently over-permissive.
+          """
+          import os, sys, tempfile, subprocess, pathlib, textwrap
+
+          with tempfile.TemporaryDirectory() as tmp:
+              tmp = pathlib.Path(tmp)
+              (tmp / "SKILL.md").write_text(textwrap.dedent("""\
+              ---
+              name: smoke-test-skill
+              description: "Smoke test fixture for validator regression coverage. Do not use."
+              ---
+              See references/missing.toml for the missing config.
+              """), encoding="utf-8")
+              (tmp / "references").mkdir()
+              # Note: NO missing.toml is created — this is the bug we want to catch
+
+              script = pathlib.Path("scripts/validate_skill.py").resolve()
+              proc = subprocess.run(
+                  [sys.executable, str(script), str(tmp)],
+                  capture_output=True, text=True,
+              )
+              if proc.returncode == 0:
+                  print("SMOKE TEST FAILED: validator accepted a missing .toml reference")
+                  print("stdout:", proc.stdout)
+                  print("stderr:", proc.stderr)
+                  sys.exit(1)
+              if "missing.toml" not in proc.stdout:
+                  print("SMOKE TEST FAILED: validator rejected but didn't name the missing file")
+                  print("stdout:", proc.stdout)
+                  sys.exit(1)
+              print("OK: validator correctly rejected missing .toml reference")
+              PY
+
   validate-output-schema:
     name: Validate JSON output schema (sanity)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -70,4 +112,92 @@ jobs:
                   print(" -", e)
               sys.exit(1)
           print("All JSON files parse cleanly.")
+          PY
+
+      - name: Validate example JSON against schema (backward-compat)
+        run: |
+          python - <<'PY'
+          """Verify four backward-compat shapes against the v2.5.1 schema.
+
+          1. DEFECT_CONFIRMED with falsifier and without repair_revalidation (v2.0.x shape)
+          2. NO_DEFECT_CONFIRMED without falsifier but with disproof (v2.5.0+ allowed shape)
+          3. NO_DEFECT_CONFIRMED with neither falsifier nor disproof (must REJECT — nothing-burger)
+          4. Full v2.5.1 output with repair_revalidation INVARIANT_HOLDS
+          5. INVARIANT_DRIFTED without drift_notes (must REJECT — schema enforces)
+          """
+          import json, sys, copy
+          import jsonschema
+          try:
+              import jsonschema
+          except ImportError:
+              print("jsonschema not installed; skipping backward-compat test")
+              sys.exit(0)
+
+          schema = json.load(open('assets/center-audit-output.schema.json', encoding='utf-8'))
+          example = json.load(open('examples/sample-audit-output.json', encoding='utf-8'))
+          validator = jsonschema.Draft202012Validator(schema)
+
+          # Shape 1: v2.0.x — DEFECT_CONFIRMED with falsifier, no repair_revalidation
+          shape1 = copy.deepcopy(example)
+          shape1['schema_version'] = '2.5.1'
+          del shape1['repair_revalidation']
+          validator.validate(shape1)
+          print("OK  shape 1: v2.0.x DEFECT_CONFIRMED with falsifier, no repair_revalidation")
+
+          # Shape 2: NO_DEFECT_CONFIRMED with disproof, no falsifier (v2.5.0+ allowed)
+          shape2 = copy.deepcopy(example)
+          shape2['schema_version'] = '2.5.1'
+          shape2['result'] = 'NO_DEFECT_CONFIRMED'
+          shape2['confirmed_defects'] = []
+          shape2['disproven_concerns'] = [
+              {
+                  'anchor': 'src/foo.ts:42',
+                  'concern': 'silent drop on null input',
+                  'evidence_of_absence': 'reproduction with null input passes',
+                  'scope_limits': 'single input shape tested',
+                  'evidence_ids': ['E1']
+              }
+          ]
+          del shape2['case_file']['falsifier']
+          del shape2['repair_revalidation']
+          validator.validate(shape2)
+          print("OK  shape 2: NO_DEFECT_CONFIRMED with disproof, no falsifier")
+
+          # Shape 3: NO_DEFECT_CONFIRMED with NOTHING (must reject)
+          shape3 = copy.deepcopy(example)
+          shape3['schema_version'] = '2.5.1'
+          shape3['result'] = 'NO_DEFECT_CONFIRMED'
+          shape3['confirmed_defects'] = []
+          shape3['disproven_concerns'] = []
+          del shape3['case_file']['falsifier']
+          del shape3['repair_revalidation']
+          try:
+              validator.validate(shape3)
+              print("FAIL shape 3: NO_DEFECT_CONFIRMED with nothing was ACCEPTED (nothing-burger guard broken)")
+              sys.exit(1)
+          except jsonschema.ValidationError:
+              print("OK  shape 3: NO_DEFECT_CONFIRMED with nothing correctly REJECTED")
+
+          # Shape 4: full v2.5.1 with repair_revalidation INVARIANT_HOLDS
+          validator.validate(example)
+          print("OK  shape 4: full v2.5.1 with repair_revalidation INVARIANT_HOLDS")
+
+          # Shape 5: INVARIANT_DRIFTED without drift_notes (must reject)
+          shape5 = copy.deepcopy(example)
+          shape5['schema_version'] = '2.5.1'
+          shape5['repair_revalidation'] = {
+              'revalidated': True,
+              'method': 'Re-ran trajectory against current source',
+              'result': 'INVARIANT_DRIFTED',
+              # drift_notes deliberately omitted
+          }
+          try:
+              validator.validate(shape5)
+              print("FAIL shape 5: INVARIANT_DRIFTED without drift_notes was ACCEPTED (drift_notes guard broken)")
+              sys.exit(1)
+          except jsonschema.ValidationError:
+              print("OK  shape 5: INVARIANT_DRIFTED without drift_notes correctly REJECTED")
+
+          print()
+          print("All backward-compat checks passed.")
           PY

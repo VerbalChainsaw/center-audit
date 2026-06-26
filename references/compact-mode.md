@@ -1,5 +1,7 @@
 # CENTER-AUDIT: Ultra-Compact Mode
 
+> **Mutual exclusion.** This file is a stand-in for `SKILL.md`, loaded **instead of** it when context is severely constrained. Do not load both — that wastes tokens and duplicates doctrine. If you can fit `SKILL.md` (~488 lines), load it. If you cannot, load this file and load the references lazily as the case requires.
+
 Use this file instead of the full `SKILL.md` when context is severely constrained.
 
 ```text
