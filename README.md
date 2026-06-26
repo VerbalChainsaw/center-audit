@@ -42,6 +42,20 @@ clean.
 
 ---
 
+## Used by
+
+Real audit runs produced with this skill, against real codebases:
+
+| Target | Defect class | Outcome | Audit output |
+|---|---|---|---|
+| `VerbalChainsaw/opencode-source` `packages/autogoal/src/server.ts:1075-1111` | Boot orphan-chain cleanup misses state-absent case | `DEFECT_CONFIRMED`, MEDIUM, HIGH confidence. 5 evidence entries, 5-link trajectory, repair contract with forbidden-scope constraint. | [opencode-source/docs/audits/2026-06-26-state-absent-orphan.json](https://github.com/VerbalChainsaw/opencode-source/blob/dev/docs/audits/2026-06-26-state-absent-orphan.json) |
+
+Adding yours: open a PR that adds a row to this table with a link to the audit JSON. The audit must validate against the v2.5.1 schema and follow the trigger cases (no general review, no refactor — only specific suspected defects).
+
+For worked examples bundled with the skill, see `references/worked-example-autogoal-bridge-webhook.md` (a multi-perspective cascade on the same AutoGoal codebase that surfaced a bridge-webhook defect with a K1 self-correction).
+
+---
+
 ## What's new in v2.5
 
 ### `repair_revalidation` field (v2.5.0)
